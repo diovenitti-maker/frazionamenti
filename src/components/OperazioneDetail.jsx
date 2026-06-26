@@ -5,7 +5,7 @@ import { calcolaRiepilogo, num, fmt, pct } from '../App'
 
 const TABS = ['📊 Riepilogo', '🏠 Acquisto', '🔨 Costi lavori', '🏷️ Lotti vendita', '👥 Partecipanti', '💰 Tassazione & IMU', '📝 Note']
 
-export default function OperazioneDetail({ op, onBack }) {
+export default function OperazioneDetail({ op, onBack, isMaster }) {
   const [tab, setTab] = useState(0)
   const [local, setLocal] = useState(op)
   const saveTimer = useRef(null)
@@ -62,7 +62,7 @@ export default function OperazioneDetail({ op, onBack }) {
         ))}
       </div>
 
-      {tab === 0 && <TabRiepilogo op={local} calc={calc} updateField={updateField} />}
+      {tab === 0 && <TabRiepilogo op={local} calc={calc} updateField={updateField} isMaster={isMaster} />}
       {tab === 1 && <TabAcquisto op={local} calc={calc} update={updateField} />}
       {tab === 2 && <TabCostiLavori op={local} calc={calc} update={updateField} update2={update} />}
       {tab === 3 && <TabLotti op={local} calc={calc} update={update} />}
@@ -70,15 +70,17 @@ export default function OperazioneDetail({ op, onBack }) {
       {tab === 5 && <TabTassazione op={local} calc={calc} update={update} updateField={updateField} />}
       {tab === 6 && <TabNote op={local} update={updateField} />}
 
-      <div className="delete-zone">
-        <button className="btn-danger" onClick={eliminaOperazione}>🗑️ Elimina operazione</button>
-      </div>
+      {isMaster && (
+        <div className="delete-zone">
+          <button className="btn-danger" onClick={eliminaOperazione}>🗑️ Elimina operazione</button>
+        </div>
+      )}
     </div>
   )
 }
 
 // ---- Tab Riepilogo ----
-function TabRiepilogo({ op, calc, updateField }) {
+function TabRiepilogo({ op, calc, updateField, isMaster }) {
   const isPositivo = calc.guadagno >= 0
 
   // Durata
@@ -105,6 +107,24 @@ function TabRiepilogo({ op, calc, updateField }) {
           ))}
         </div>
       </div>
+
+      {/* Codice accesso — solo master */}
+      {isMaster && (
+        <div className="card">
+          <div className="card-title">🔑 Codice accesso cantiere</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={op.codiceAccesso || ''}
+              onChange={e => updateField('codiceAccesso', e.target.value)}
+              placeholder="es. 4821"
+              style={{ maxWidth: 140, fontSize: 18, letterSpacing: 4, textAlign: 'center' }}
+            />
+            <span style={{ fontSize: 13, color: 'var(--text2)' }}>Condividi questo codice con i partecipanti del cantiere</span>
+          </div>
+        </div>
+      )}
 
       {/* Date e durata */}
       <div className="card">
