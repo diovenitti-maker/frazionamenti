@@ -3,7 +3,26 @@ import { db } from '../firebase'
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { calcolaRiepilogo, num, fmt, pct } from '../App'
 
-const TABS = ['📊 Riepilogo', '🏠 Acquisto', '🔨 Ristrutturazione', '🏷️ Lotti vendita', '👥 Partecipanti', '💰 Tassazione', '📝 Note']
+const TABS = ['📊 Dashboard', '🏠 Acquisto', '🔨 Costi lavori', '🏷️ Lotti vendita', '👥 Partecipanti', '💰 Tassazione & IMU', '📝 Note']
+
+const ITER_PRE = [
+  'Ricerca e vista annunci',
+  'Compilazione excel al volo con ipotesi % investimento',
+  'Ipotesi di frazionamento rapida',
+  'Visione casa per studio muri portanti',
+  'Proposta di collaborazione con agenzia',
+]
+const ITER_POST = [
+  'Offerta vincolata (es. ottenimento progetto, vendita su carta)',
+  'Compilazione completa app: capitolato, costi pratiche, DL',
+  'Capitolato lavori definito (incluso pulizia casa e androne)',
+  'Costi pratiche edilizie con oneri enti e DL',
+  'Pratica edilizia avviata',
+  'Inizio lavori',
+  'Fine lavori',
+  'Accatastamento / frazionamento catastale',
+  'Vendite completate',
+]
 
 export default function OperazioneDetail({ op, onBack }) {
   const [tab, setTab] = useState(0)
@@ -23,6 +42,13 @@ export default function OperazioneDetail({ op, onBack }) {
 
   function updateField(key, val) { update({ [key]: val }) }
 
+  function toggleIter(tipo, idx) {
+    const key = tipo === 'pre' ? 'iterPre' : 'iterPost'
+    const current = local[key] || []
+    const next = current.includes(idx) ? current.filter(i => i !== idx) : [...current, idx]
+    update({ [key]: next })
+  }
+
   async function eliminaOperazione() {
     if (!confirm('Eliminare definitivamente questa operazione?')) return
     await deleteDoc(doc(db, 'frazionamenti', op.id))
@@ -37,7 +63,7 @@ export default function OperazioneDetail({ op, onBack }) {
         <button className="btn-ghost" onClick={onBack}>← Indietro</button>
         <div className="detail-header-info">
           <input
-            style={{ background: 'transparent', border: 'none', fontSize: 20, fontWeight: 600, padding: '0', color: 'var(--text)', width: '100%' }}
+            style={{ background: 'transparent', border: 'none', fontSize: 20, fontWeight: 600, padding: 0, color: 'var(--text)', width: '100%' }}
             value={local.nome || ''}
             onChange={e => updateField('nome', e.target.value)}
             placeholder="Nome operazione"
@@ -62,12 +88,12 @@ export default function OperazioneDetail({ op, onBack }) {
         ))}
       </div>
 
-      {tab === 0 && <TabRiepilogo calc={calc} op={local} />}
+      {tab === 0 && <TabDashboard op={local} calc={calc} toggleIter={toggleIter} update={update} updateField={updateField} />}
       {tab === 1 && <TabAcquisto op={local} calc={calc} update={updateField} />}
-      {tab === 2 && <TabRistrutturazione op={local} calc={calc} update={updateField} />}
+      {tab === 2 && <TabCostiLavori op={local} calc={calc} update={updateField} update2={update} />}
       {tab === 3 && <TabLotti op={local} calc={calc} update={update} />}
       {tab === 4 && <TabPartecipanti op={local} calc={calc} update={update} />}
-      {tab === 5 && <TabTassazione op={local} calc={calc} />}
+      {tab === 5 && <TabTassazione op={local} calc={calc} update={update} updateField={updateField} />}
       {tab === 6 && <TabNote op={local} update={updateField} />}
 
       <div className="delete-zone">
@@ -77,115 +103,153 @@ export default function OperazioneDetail({ op, onBack }) {
   )
 }
 
-// ---- Tab Riepilogo ----
-function TabRiepilogo({ calc, op }) {
+// ---- Tab Dashboard ----
+function TabDashboard({ op, calc, toggleIter, update, updateField }) {
   const isPositivo = calc.guadagno >= 0
+  const iterPre = op.iterPre || []
+  const iterPost = op.iterPost || []
+
+  // Durata operazione
+  const dataAcquisto = op.dataAcquisto || ''
+  const dataRivendita = op.dataRivendita || ''
+  let durataGiorni = null
+  let durataMesi = null
+  if (dataAcquisto && dataRivendita) {
+    const d1 = new Date(dataAcquisto)
+    const d2 = new Date(dataRivendita)
+    durataGiorni = Math.round((d2 - d1) / (1000 * 60 * 60 * 24))
+    durataMesi = (durataGiorni / 30.44).toFixed(1)
+  }
 
   return (
     <div>
+      {/* Riepilogo finanziario */}
       <div className={`highlight-box ${isPositivo ? '' : 'red'}`}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 16 }}>
           <div>
             <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>Investimento totale</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{fmt(calc.costoTotale)}</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{fmt(calc.costoTotale)}</div>
           </div>
           <div>
             <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>Incassi stimati</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{fmt(calc.incassiTotali)}</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{fmt(calc.incassiTotali)}</div>
           </div>
           <div>
-            <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>Guadagno netto</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: isPositivo ? 'var(--green)' : 'var(--red)' }}>
-              {fmt(calc.guadagno)}
-            </div>
+            <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>Guadagno lordo</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: isPositivo ? 'var(--green)' : 'var(--red)' }}>{fmt(calc.guadagno)}</div>
           </div>
-        </div>
-        <div style={{ marginTop: 14, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-          <span style={{ color: 'var(--text2)', fontSize: 13 }}>
-            Rendimento: <strong style={{ color: isPositivo ? 'var(--green)' : 'var(--red)' }}>{pct(calc.rendimento)}</strong>
-          </span>
-          <span style={{ color: 'var(--text2)', fontSize: 13 }}>
-            Lotti: <strong>{(op.lotti || []).length}</strong>
-          </span>
-          <span style={{ color: 'var(--text2)', fontSize: 13 }}>
-            Partecipanti: <strong>{(op.partecipanti || []).length}</strong>
-          </span>
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>Rendimento</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: isPositivo ? 'var(--green)' : 'var(--red)' }}>{pct(calc.rendimento)}</div>
+          </div>
         </div>
       </div>
 
+      {/* Durata operazione */}
       <div className="card">
-        <div className="card-title">Struttura dei costi</div>
-        <div className="result-grid">
-          <div className="result-box">
-            <div className="rl">Costo acquisto</div>
-            <div className="rv">{fmt(num(op.prezzAcquisto))}</div>
+        <div className="card-title">📅 Durata operazione</div>
+        <div className="field-grid">
+          <div className="field">
+            <label>Data acquisto</label>
+            <input type="date" value={op.dataAcquisto || ''} onChange={e => updateField('dataAcquisto', e.target.value)} />
           </div>
-          <div className="result-box">
-            <div className="rl">Commissione + IVA acquisto</div>
-            <div className="rv">{fmt(calc.costoAgenziaAcquisto)}</div>
-          </div>
-          <div className="result-box">
-            <div className="rl">Imposta di registro</div>
-            <div className="rv">{fmt(calc.impostaRegistro)}</div>
-          </div>
-          <div className="result-box">
-            <div className="rl">Imp. catastale/ipotecaria</div>
-            <div className="rv">{fmt(calc.impostaCatIpot)}</div>
-          </div>
-          <div className="result-box">
-            <div className="rl">Notaio</div>
-            <div className="rv">{fmt(num(op.costoNotaio))}</div>
-          </div>
-          <div className="result-box" style={{ background: 'var(--bg)', border: '1px solid var(--border2)' }}>
-            <div className="rl">Totale acquisto</div>
-            <div className="rv" style={{ color: 'var(--accent2)' }}>{fmt(calc.costoTotaleAcquisto)}</div>
-          </div>
-          <div className="result-box">
-            <div className="rl">Ristrutturazione</div>
-            <div className="rv">{fmt(calc.costoRist)}</div>
-          </div>
-          <div className="result-box">
-            <div className="rl">Pulizia</div>
-            <div className="rv">{fmt(num(op.pulizia))}</div>
-          </div>
-          <div className="result-box">
-            <div className="rl">Pratica comunale</div>
-            <div className="rv">{fmt(num(op.praticaComune))}</div>
-          </div>
-          <div className="result-box">
-            <div className="rl">Commissione rivendita + IVA</div>
-            <div className="rv">{fmt(calc.costoAgenziaRivendita)}</div>
+          <div className="field">
+            <label>Data rivendita (prevista/effettiva)</label>
+            <input type="date" value={op.dataRivendita || ''} onChange={e => updateField('dataRivendita', e.target.value)} />
           </div>
         </div>
+        {durataGiorni !== null && (
+          <div style={{ display: 'flex', gap: 20, marginTop: 10 }}>
+            <div className="result-box" style={{ flex: 1 }}>
+              <div className="rl">Durata in giorni</div>
+              <div className="rv">{durataGiorni} giorni</div>
+            </div>
+            <div className="result-box" style={{ flex: 1 }}>
+              <div className="rl">Durata in mesi</div>
+              <div className="rv">{durataMesi} mesi</div>
+            </div>
+            {durataGiorni > 5 * 365 && (
+              <div className="warn-box" style={{ flex: 2, alignSelf: 'center' }}>
+                ⚠️ Operazione oltre 5 anni: nessuna tassa sulla plusvalenza!
+              </div>
+            )}
+            {durataGiorni <= 5 * 365 && durataGiorni > 0 && (
+              <div className="info-box" style={{ flex: 2, alignSelf: 'center' }}>
+                ℹ️ Vendita entro 5 anni: possibile tassa plusvalenza al 26%
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
+      {/* Quote partecipanti */}
       {(op.partecipanti || []).length > 0 && (
         <div className="card">
-          <div className="card-title">Quote partecipanti</div>
+          <div className="card-title">👥 Quote partecipanti</div>
           {(op.partecipanti || []).map((p, i) => {
-            const quotaFraz = num(p.quota) / 100
-            const investimento = calc.costoTotale * quotaFraz
-            const guadagno = calc.guadagno * quotaFraz
+            const q = num(p.quota) / 100
             return (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 120px', gap: 12, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border)', fontSize: 14 }}>
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px 120px', gap: 10, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
                 <div>
-                  <div style={{ fontWeight: 500 }}>{p.nome}</div>
+                  <div style={{ fontWeight: 500 }}>{p.nome || '—'}</div>
                   <span className={`tag-regime ${p.regime === 'forfettario' ? 'tag-forfettario' : 'tag-dipendente'}`}>{p.regime || 'dipendente'}</span>
                 </div>
-                <div style={{ color: 'var(--accent2)', fontWeight: 600 }}>{pct(quotaFraz)}</div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>Investe</div>
-                  <div>{fmt(investimento)}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>Guadagna</div>
-                  <div style={{ color: guadagno >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{fmt(guadagno)}</div>
-                </div>
+                <div style={{ color: 'var(--accent2)', fontWeight: 600 }}>{pct(q)}</div>
+                <div><div style={{ fontSize: 11, color: 'var(--text3)' }}>Investe</div><strong>{fmt(calc.costoTotale * q)}</strong></div>
+                <div><div style={{ fontSize: 11, color: 'var(--text3)' }}>Guadagna</div><strong style={{ color: calc.guadagno >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(calc.guadagno * q)}</strong></div>
               </div>
             )
           })}
         </div>
       )}
+
+      {/* Iter pre-annuncio */}
+      <div className="card">
+        <div className="card-title">📋 Iter pre-annuncio</div>
+        {ITER_PRE.map((voce, i) => (
+          <div key={i} onClick={() => toggleIter('pre', i)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}>
+            <div style={{
+              width: 20, height: 20, borderRadius: 4, border: '1.5px solid',
+              borderColor: iterPre.includes(i) ? 'var(--green)' : 'var(--border2)',
+              background: iterPre.includes(i) ? 'var(--green-bg)' : 'transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+            }}>
+              {iterPre.includes(i) && <span style={{ color: 'var(--green)', fontSize: 13 }}>✓</span>}
+            </div>
+            <span style={{ fontSize: 14, color: iterPre.includes(i) ? 'var(--text3)' : 'var(--text)', textDecoration: iterPre.includes(i) ? 'line-through' : 'none' }}>
+              {i + 1}. {voce}
+            </span>
+          </div>
+        ))}
+        <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text3)' }}>
+          {iterPre.length}/{ITER_PRE.length} completati
+        </div>
+      </div>
+
+      {/* Iter post-annuncio */}
+      <div className="card">
+        <div className="card-title">📋 Iter post-annuncio</div>
+        {ITER_POST.map((voce, i) => (
+          <div key={i} onClick={() => toggleIter('post', i)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}>
+            <div style={{
+              width: 20, height: 20, borderRadius: 4, border: '1.5px solid',
+              borderColor: iterPost.includes(i) ? 'var(--green)' : 'var(--border2)',
+              background: iterPost.includes(i) ? 'var(--green-bg)' : 'transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+            }}>
+              {iterPost.includes(i) && <span style={{ color: 'var(--green)', fontSize: 13 }}>✓</span>}
+            </div>
+            <span style={{ fontSize: 14, color: iterPost.includes(i) ? 'var(--text3)' : 'var(--text)', textDecoration: iterPost.includes(i) ? 'line-through' : 'none' }}>
+              {i + 1}. {voce}
+            </span>
+          </div>
+        ))}
+        <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text3)' }}>
+          {iterPost.length}/{ITER_POST.length} completati
+        </div>
+      </div>
     </div>
   )
 }
@@ -202,12 +266,12 @@ function TabAcquisto({ op, calc, update }) {
             <input type="number" value={op.prezzAcquisto || ''} onChange={e => update('prezzAcquisto', e.target.value)} />
           </div>
           <div className="field">
-            <label>Commissione agenzia acquisto (%)</label>
+            <label>Commissione agenzia acquisto</label>
             <input type="number" step="0.01" value={op.commissioneAgenzia || ''} onChange={e => update('commissioneAgenzia', e.target.value)} />
-            <span style={{ fontSize: 12, color: 'var(--text3)' }}>{pct(num(op.commissioneAgenzia))} → costo: {fmt(calc.costoAgenziaAcquisto)}</span>
+            <span style={{ fontSize: 12, color: 'var(--text3)' }}>{pct(num(op.commissioneAgenzia))} → {fmt(calc.costoAgenziaAcquisto)}</span>
           </div>
           <div className="field">
-            <label>IVA su commissione (%)</label>
+            <label>IVA su commissione</label>
             <input type="number" step="0.01" value={op.ivaAgenzia || ''} onChange={e => update('ivaAgenzia', e.target.value)} />
           </div>
           <div className="field">
@@ -224,22 +288,10 @@ function TabAcquisto({ op, calc, update }) {
       <div className="card">
         <div className="card-title">Calcolo imposte (base catastale)</div>
         <div className="result-grid">
-          <div className="result-box">
-            <div className="rl">Rendita rivalutata (+5%)</div>
-            <div className="rv">{fmt(calc.renditaRivalutata)}</div>
-          </div>
-          <div className="result-box">
-            <div className="rl">Valore catastale (×120)</div>
-            <div className="rv">{fmt(calc.valoreCatastale)}</div>
-          </div>
-          <div className="result-box">
-            <div className="rl">Imposta di registro (9%)</div>
-            <div className="rv">{fmt(calc.impostaRegistro)}</div>
-          </div>
-          <div className="result-box">
-            <div className="rl">Imp. catastale + ipotecaria</div>
-            <div className="rv">{fmt(calc.impostaCatIpot)}</div>
-          </div>
+          <div className="result-box"><div className="rl">Rendita rivalutata (+5%)</div><div className="rv">{fmt(calc.renditaRivalutata)}</div></div>
+          <div className="result-box"><div className="rl">Valore catastale (×120)</div><div className="rv">{fmt(calc.valoreCatastale)}</div></div>
+          <div className="result-box"><div className="rl">Imposta di registro (9%)</div><div className="rv">{fmt(calc.impostaRegistro)}</div></div>
+          <div className="result-box"><div className="rl">Imp. catastale + ipotecaria</div><div className="rv">{fmt(calc.impostaCatIpot)}</div></div>
           <div className="result-box" style={{ background: 'var(--bg)', border: '1px solid var(--border2)' }}>
             <div className="rl">TOTALE ACQUISTO</div>
             <div className="rv" style={{ color: 'var(--accent2)' }}>{fmt(calc.costoTotaleAcquisto)}</div>
@@ -248,19 +300,31 @@ function TabAcquisto({ op, calc, update }) {
       </div>
 
       <div className="info-box">
-        ℹ️ L'imposta di registro è calcolata sul <strong>valore catastale</strong> (rendita × 1.05 × 120) al 9%, con un minimo di €100 per le imposte catastale e ipotecaria.<br />
-        Se è seconda casa non si applicano le agevolazioni prima casa.
+        ℹ️ Imposta di registro calcolata sul valore catastale (rendita × 1.05 × 120) al 9%, con €100 fissi per imposte catastale e ipotecaria. Operazione come seconda casa.
       </div>
     </div>
   )
 }
 
-// ---- Tab Ristrutturazione ----
-function TabRistrutturazione({ op, calc, update }) {
+// ---- Tab Costi Lavori ----
+function TabCostiLavori({ op, calc, update, update2 }) {
+  const vociCapitolato = op.vociCapitolato || []
+
+  function addVoce() {
+    update2({ vociCapitolato: [...vociCapitolato, { id: Date.now(), desc: '', importo: 0 }] })
+  }
+  function updateVoce(idx, field, val) {
+    update2({ vociCapitolato: vociCapitolato.map((v, i) => i === idx ? { ...v, [field]: val } : v) })
+  }
+  function removeVoce(idx) {
+    update2({ vociCapitolato: vociCapitolato.filter((_, i) => i !== idx) })
+  }
+  const totCapitolato = vociCapitolato.reduce((s, v) => s + num(v.importo), 0)
+
   return (
     <div>
       <div className="card">
-        <div className="card-title">Dati immobile e ristrutturazione</div>
+        <div className="card-title">Dati immobile</div>
         <div className="field-grid">
           <div className="field">
             <label>Mq netti calpestabili (iniziale)</label>
@@ -271,6 +335,39 @@ function TabRistrutturazione({ op, calc, update }) {
             <input type="number" value={op.costoRistMq || ''} onChange={e => update('costoRistMq', e.target.value)} />
             <span style={{ fontSize: 12, color: 'var(--text3)' }}>Totale: {fmt(calc.costoRist)}</span>
           </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">📋 Capitolato lavori</div>
+        <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+          Inserisci le voci principali dal tuo Excel. Tutti i partecipanti possono modificarle.
+        </div>
+        {vociCapitolato.length > 0 && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 34px', gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase' }}>Descrizione</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase' }}>Importo (€)</span>
+              <span></span>
+            </div>
+            {vociCapitolato.map((v, i) => (
+              <div key={v.id || i} style={{ display: 'grid', gridTemplateColumns: '1fr 140px 34px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                <input value={v.desc || ''} onChange={e => updateVoce(i, 'desc', e.target.value)} placeholder="es. Rifacimento bagno" style={{ fontSize: 13 }} />
+                <input type="number" value={v.importo || ''} onChange={e => updateVoce(i, 'importo', e.target.value)} placeholder="€" style={{ fontSize: 13 }} />
+                <button className="btn-icon" onClick={() => removeVoce(i)}>✕</button>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 0', borderTop: '1px solid var(--border)', marginTop: 4 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent2)' }}>Totale capitolato: {fmt(totCapitolato)}</span>
+            </div>
+          </div>
+        )}
+        <button className="btn-ghost" style={{ marginTop: 4 }} onClick={addVoce}>+ Aggiungi voce</button>
+      </div>
+
+      <div className="card">
+        <div className="card-title">Altri costi lavori</div>
+        <div className="field-grid">
           <div className="field">
             <label>Pulizia casa e androne (€)</label>
             <input type="number" value={op.pulizia || ''} onChange={e => update('pulizia', e.target.value)} />
@@ -279,10 +376,38 @@ function TabRistrutturazione({ op, calc, update }) {
             <label>Pratica comunale + diritti enti (€)</label>
             <input type="number" value={op.praticaComune || ''} onChange={e => update('praticaComune', e.target.value)} />
           </div>
+          <div className="field">
+            <label>Tabelle millesimali (€)</label>
+            <input type="number" value={op.tabelleMillesimali || ''} onChange={e => update('tabelleMillesimali', e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Spese condominiali stimate (€)</label>
+            <input type="number" value={op.speseCondominio || ''} onChange={e => update('speseCondominio', e.target.value)} />
+            <span style={{ fontSize: 12, color: 'var(--text3)' }}>Per tutta la durata del possesso</span>
+          </div>
+          <div className="field">
+            <label>Allacci e utenze (€)</label>
+            <input type="number" value={op.allacci || ''} onChange={e => update('allacci', e.target.value)} />
+          </div>
         </div>
       </div>
+
+      <div className="card">
+        <div className="card-title">Riepilogo costi</div>
+        <div className="result-grid">
+          <div className="result-box"><div className="rl">Ristrutturazione (€/mq)</div><div className="rv">{fmt(calc.costoRist)}</div></div>
+          <div className="result-box"><div className="rl">Capitolato dettaglio</div><div className="rv">{fmt(totCapitolato)}</div></div>
+          <div className="result-box"><div className="rl">Pulizia</div><div className="rv">{fmt(num(op.pulizia))}</div></div>
+          <div className="result-box"><div className="rl">Pratica comunale</div><div className="rv">{fmt(num(op.praticaComune))}</div></div>
+          <div className="result-box"><div className="rl">Tabelle millesimali</div><div className="rv">{fmt(num(op.tabelleMillesimali))}</div></div>
+          <div className="result-box"><div className="rl">Spese condominiali</div><div className="rv">{fmt(num(op.speseCondominio))}</div></div>
+          <div className="result-box"><div className="rl">Allacci e utenze</div><div className="rv">{fmt(num(op.allacci))}</div></div>
+          <div className="result-box"><div className="rl">Commissione rivendita</div><div className="rv">{fmt(calc.costoAgenziaRivendita)}</div></div>
+        </div>
+      </div>
+
       <div className="warn-box">
-        ⚠️ Prima di procedere verificare: <strong>rapporto aeroilluminante</strong> (finestre ≥ 1/8 del pavimento), fattibilità scarichi per nuovo bagno/cucina, <strong>regolamento condominiale</strong> (verifica che non vieti il frazionamento).
+        ⚠️ Verificare: rapporto aeroilluminante (finestre ≥ 1/8 del pavimento), fattibilità scarichi nuovo bagno/cucina, regolamento condominiale (no divieto frazionamento).
       </div>
     </div>
   )
@@ -293,15 +418,11 @@ function TabLotti({ op, calc, update }) {
   const lotti = op.lotti || []
 
   function addLotto() {
-    const newLotti = [...lotti, { id: Date.now(), nome: `Appartamento ${lotti.length + 1}`, mqNetti: 0, prezzoVendita: 0 }]
-    update({ lotti: newLotti })
+    update({ lotti: [...lotti, { id: Date.now(), nome: `Appartamento ${lotti.length + 1}`, mqNetti: 0, prezzoVendita: 0, prezzoMinimo: 0 }] })
   }
-
   function updateLotto(idx, field, val) {
-    const newLotti = lotti.map((l, i) => i === idx ? { ...l, [field]: val } : l)
-    update({ lotti: newLotti })
+    update({ lotti: lotti.map((l, i) => i === idx ? { ...l, [field]: val } : l) })
   }
-
   function removeLotto(idx) {
     update({ lotti: lotti.filter((_, i) => i !== idx) })
   }
@@ -310,29 +431,38 @@ function TabLotti({ op, calc, update }) {
     <div>
       <div className="card">
         <div className="card-title">Lotti da rivendere</div>
-
         {lotti.length > 0 && (
           <div>
-            <div className="table-head lotto-row">
-              <span>Nome lotto</span><span>Mq netti</span><span>Prezzo vendita</span><span>€/mq</span><span></span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 130px 130px 80px 34px', gap: 8, marginBottom: 4 }}>
+              {['Nome', 'Mq', 'Prezzo minimo', 'Prezzo vendita', '€/mq', ''].map((h, i) => (
+                <span key={i} style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase' }}>{h}</span>
+              ))}
             </div>
             {lotti.map((l, i) => {
               const mq = num(l.mqNetti)
               const prz = num(l.prezzoVendita)
-              const xMq = mq > 0 ? (prz / mq).toFixed(0) : '—'
+              const xMq = mq > 0 ? Math.round(prz / mq) : null
+              const surplus = num(l.prezzoVendita) - num(l.prezzoMinimo)
               return (
-                <div key={l.id || i} className="lotto-row">
-                  <input value={l.nome || ''} onChange={e => updateLotto(i, 'nome', e.target.value)} placeholder="Nome" />
-                  <input type="number" value={l.mqNetti || ''} onChange={e => updateLotto(i, 'mqNetti', e.target.value)} placeholder="mq" />
-                  <input type="number" value={l.prezzoVendita || ''} onChange={e => updateLotto(i, 'prezzoVendita', e.target.value)} placeholder="€" />
-                  <span style={{ fontSize: 13, color: 'var(--text2)', textAlign: 'center' }}>{xMq !== '—' ? `${xMq}€` : '—'}</span>
-                  <button className="btn-icon" onClick={() => removeLotto(i)}>✕</button>
+                <div key={l.id || i}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 130px 130px 80px 34px', gap: 8, marginBottom: 4, alignItems: 'center' }}>
+                    <input value={l.nome || ''} onChange={e => updateLotto(i, 'nome', e.target.value)} style={{ fontSize: 13 }} />
+                    <input type="number" value={l.mqNetti || ''} onChange={e => updateLotto(i, 'mqNetti', e.target.value)} placeholder="mq" style={{ fontSize: 13 }} />
+                    <input type="number" value={l.prezzoMinimo || ''} onChange={e => updateLotto(i, 'prezzoMinimo', e.target.value)} placeholder="€ min" style={{ fontSize: 13 }} />
+                    <input type="number" value={l.prezzoVendita || ''} onChange={e => updateLotto(i, 'prezzoVendita', e.target.value)} placeholder="€" style={{ fontSize: 13 }} />
+                    <span style={{ fontSize: 13, color: 'var(--text2)', textAlign: 'center' }}>{xMq ? `${xMq}€` : '—'}</span>
+                    <button className="btn-icon" onClick={() => removeLotto(i)}>✕</button>
+                  </div>
+                  {surplus > 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--green)', marginBottom: 8, paddingLeft: 4 }}>
+                      ↑ Surplus su minimo: {fmt(surplus)} → andrà a chi ha partecipato attivamente
+                    </div>
+                  )}
                 </div>
               )
             })}
           </div>
         )}
-
         <button className="btn-ghost" style={{ marginTop: 8 }} onClick={addLotto}>+ Aggiungi lotto</button>
       </div>
 
@@ -340,30 +470,15 @@ function TabLotti({ op, calc, update }) {
         <div className="card">
           <div className="card-title">Totale incassi</div>
           <div className="result-grid">
-            <div className="result-box">
-              <div className="rl">Incassi totali stimati</div>
-              <div className="rv" style={{ color: 'var(--green)' }}>{fmt(calc.incassiTotali)}</div>
-            </div>
-            <div className="result-box">
-              <div className="rl">Commissione rivendita + IVA</div>
-              <div className="rv" style={{ color: 'var(--red)' }}>− {fmt(calc.costoAgenziaRivendita)}</div>
-            </div>
-            <div className="result-box">
-              <div className="rl">Guadagno operazione</div>
-              <div className="rv" style={{ color: calc.guadagno >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(calc.guadagno)}</div>
-            </div>
-            <div className="result-box">
-              <div className="rl">Rendimento</div>
-              <div className="rv" style={{ color: calc.rendimento >= 0 ? 'var(--green)' : 'var(--red)' }}>{pct(calc.rendimento)}</div>
-            </div>
+            <div className="result-box"><div className="rl">Incassi totali</div><div className="rv" style={{ color: 'var(--green)' }}>{fmt(calc.incassiTotali)}</div></div>
+            <div className="result-box"><div className="rl">Incassi minimi</div><div className="rv">{fmt(lotti.reduce((s, l) => s + num(l.prezzoMinimo), 0))}</div></div>
+            <div className="result-box"><div className="rl">Surplus totale</div><div className="rv" style={{ color: 'var(--green)' }}>{fmt(lotti.reduce((s, l) => s + Math.max(0, num(l.prezzoVendita) - num(l.prezzoMinimo)), 0))}</div></div>
+            <div className="result-box"><div className="rl">Commissione rivendita</div><div className="rv" style={{ color: 'var(--red)' }}>− {fmt(calc.costoAgenziaRivendita)}</div></div>
+            <div className="result-box"><div className="rl">Guadagno operazione</div><div className="rv" style={{ color: calc.guadagno >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(calc.guadagno)}</div></div>
+            <div className="result-box"><div className="rl">Rendimento</div><div className="rv" style={{ color: calc.rendimento >= 0 ? 'var(--green)' : 'var(--red)' }}>{pct(calc.rendimento)}</div></div>
           </div>
         </div>
       )}
-
-      <div className="info-box">
-        ℹ️ La commissione per la rivendita è calcolata sul totale degli incassi con la stessa percentuale + IVA dell'acquisto.
-        Chiedere preventivo all'agenzia prima di inserire il valore finale.
-      </div>
     </div>
   )
 }
@@ -374,86 +489,124 @@ function TabPartecipanti({ op, calc, update }) {
   const totaleQuote = partecipanti.reduce((s, p) => s + num(p.quota), 0)
   const quoteOk = Math.abs(totaleQuote - 100) < 0.1
 
-  function addPartecipante() {
-    update({ partecipanti: [...partecipanti, { id: Date.now(), nome: '', quota: 0, regime: 'dipendente', redditoAnnuo: 0 }] })
-  }
+  // Calcolo surplus e bonus gestione
+  const surplusTotale = (op.lotti || []).reduce((s, l) => s + Math.max(0, num(l.prezzoVendita) - num(l.prezzoMinimo)), 0)
+  const bonusGestione = num(op.bonusGestione) / 100
+  const poolBonus = surplusTotale * bonusGestione
 
+  function addP() {
+    update({ partecipanti: [...partecipanti, { id: Date.now(), nome: '', quota: 0, regime: 'dipendente', redditoAnnuo: 0, attivo: false, quotaBonus: 0 }] })
+  }
   function updateP(idx, field, val) {
     update({ partecipanti: partecipanti.map((p, i) => i === idx ? { ...p, [field]: val } : p) })
   }
-
   function removeP(idx) {
     update({ partecipanti: partecipanti.filter((_, i) => i !== idx) })
   }
 
+  const totQuoteBonus = partecipanti.filter(p => p.attivo).reduce((s, p) => s + num(p.quotaBonus), 0)
+  const bonusOk = Math.abs(totQuoteBonus - 100) < 0.1 || partecipanti.filter(p => p.attivo).length === 0
+
   return (
     <div>
       <div className="card">
-        <div className="card-title">Partecipanti all'operazione</div>
-
-        {partecipanti.length > 0 && (
-          <div>
-            <div className="table-head part-row" style={{ gridTemplateColumns: '1fr 90px 140px 34px' }}>
-              <span>Nome</span><span>Quota %</span><span>Regime fiscale</span><span></span>
-            </div>
-            {partecipanti.map((p, i) => (
-              <div key={p.id || i}>
-                <div className="part-row" style={{ gridTemplateColumns: '1fr 90px 140px 34px' }}>
-                  <input value={p.nome || ''} onChange={e => updateP(i, 'nome', e.target.value)} placeholder="Nome e cognome" />
-                  <input type="number" step="0.1" value={p.quota || ''} onChange={e => updateP(i, 'quota', e.target.value)} placeholder="%" />
-                  <select value={p.regime || 'dipendente'} onChange={e => updateP(i, 'regime', e.target.value)}>
-                    <option value="dipendente">Dipendente</option>
-                    <option value="forfettario">Forfettario</option>
-                  </select>
-                  <button className="btn-icon" onClick={() => removeP(i)}>✕</button>
-                </div>
-                {p.regime === 'dipendente' && (
-                  <div style={{ paddingLeft: 0, marginBottom: 8 }}>
-                    <div className="field" style={{ maxWidth: 220 }}>
-                      <label>Reddito da lavoro annuo (€) — per calcolo IRPEF cumulato</label>
-                      <input type="number" value={p.redditoAnnuo || ''} onChange={e => updateP(i, 'redditoAnnuo', e.target.value)} placeholder="es. 35000" />
-                    </div>
-                  </div>
-                )}
+        <div className="card-title">Partecipanti</div>
+        {partecipanti.map((p, i) => (
+          <div key={p.id || i} style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 140px 120px 34px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <input value={p.nome || ''} onChange={e => updateP(i, 'nome', e.target.value)} placeholder="Nome e cognome" style={{ fontSize: 13 }} />
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 3 }}>Quota %</div>
+                <input type="number" step="0.1" value={p.quota || ''} onChange={e => updateP(i, 'quota', e.target.value)} style={{ fontSize: 13 }} />
               </div>
-            ))}
+              <select value={p.regime || 'dipendente'} onChange={e => updateP(i, 'regime', e.target.value)} style={{ fontSize: 13 }}>
+                <option value="dipendente">Dipendente</option>
+                <option value="forfettario">Forfettario</option>
+              </select>
+              {p.regime === 'dipendente' && (
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 3 }}>Reddito annuo (€)</div>
+                  <input type="number" value={p.redditoAnnuo || ''} onChange={e => updateP(i, 'redditoAnnuo', e.target.value)} placeholder="es. 35000" style={{ fontSize: 13 }} />
+                </div>
+              )}
+              {p.regime === 'forfettario' && <div />}
+              <button className="btn-icon" onClick={() => removeP(i)}>✕</button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+                <input type="checkbox" checked={p.attivo || false} onChange={e => updateP(i, 'attivo', e.target.checked)} />
+                Partecipante attivo (ha contribuito alla gestione)
+              </label>
+              {p.attivo && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text2)' }}>% bonus:</span>
+                  <input type="number" value={p.quotaBonus || ''} onChange={e => updateP(i, 'quotaBonus', e.target.value)}
+                    style={{ width: 70, fontSize: 13 }} placeholder="%" />
+                </div>
+              )}
+            </div>
           </div>
-        )}
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
-          <button className="btn-ghost" onClick={addPartecipante}>+ Aggiungi partecipante</button>
+        ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
+          <button className="btn-ghost" onClick={addP}>+ Aggiungi partecipante</button>
           {partecipanti.length > 0 && (
             <span style={{ fontSize: 13, color: quoteOk ? 'var(--green)' : 'var(--yellow)' }}>
-              Totale quote: <strong>{totaleQuote.toFixed(1)}%</strong> {quoteOk ? '✓' : '⚠ (devono fare 100%)'}
+              Quote: <strong>{totaleQuote.toFixed(1)}%</strong> {quoteOk ? '✓' : '⚠ devono fare 100%'}
             </span>
           )}
         </div>
       </div>
 
+      {/* Bonus gestione */}
+      <div className="card">
+        <div className="card-title">🏆 Bonus gestione (surplus sul minimo)</div>
+        <div className="field-grid" style={{ marginBottom: 12 }}>
+          <div className="field">
+            <label>% del surplus destinata ai partecipanti attivi</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="number" value={op.bonusGestione || ''} onChange={e => update('bonusGestione', e.target.value)} placeholder="es. 50" style={{ maxWidth: 100 }} />
+              <span style={{ fontSize: 13, color: 'var(--text2)' }}>%</span>
+            </div>
+            <span style={{ fontSize: 12, color: 'var(--text3)' }}>Pool bonus disponibile: {fmt(poolBonus)}</span>
+          </div>
+        </div>
+        {surplusTotale > 0 && partecipanti.some(p => p.attivo) && (
+          <div>
+            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>Distribuzione bonus tra attivi (le % devono fare 100%):</div>
+            {partecipanti.filter(p => p.attivo).map((p, i) => {
+              const bonusP = poolBonus * (num(p.quotaBonus) / 100)
+              return (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                  <span>{p.nome || '—'} ({p.quotaBonus || 0}% del pool)</span>
+                  <span style={{ color: 'var(--green)', fontWeight: 600 }}>+{fmt(bonusP)}</span>
+                </div>
+              )
+            })}
+            {!bonusOk && <div className="warn-box" style={{ marginTop: 8 }}>⚠️ Le % bonus degli attivi devono fare 100% (attuale: {totQuoteBonus.toFixed(1)}%)</div>}
+          </div>
+        )}
+        {surplusTotale === 0 && <div style={{ fontSize: 13, color: 'var(--text3)' }}>Nessun surplus rispetto ai prezzi minimi. Inserisci prezzi minimi e vendita nei lotti.</div>}
+      </div>
+
+      {/* Riepilogo finale per partecipante */}
       {partecipanti.length > 0 && calc.costoTotale > 0 && (
         <div className="card">
-          <div className="card-title">Riepilogo per partecipante</div>
+          <div className="card-title">Riepilogo finale per partecipante</div>
           {partecipanti.map((p, i) => {
             const q = num(p.quota) / 100
+            const bonusP = p.attivo ? poolBonus * (num(p.quotaBonus) / 100) : 0
+            const guadagnoFinale = calc.guadagno * q + bonusP
             return (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 120px 120px 120px', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)', fontSize: 13, alignItems: 'center' }}>
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 110px 110px 110px', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)', fontSize: 13, alignItems: 'center' }}>
                 <div>
                   <div style={{ fontWeight: 500 }}>{p.nome || '—'}</div>
-                  <span className={`tag-regime ${p.regime === 'forfettario' ? 'tag-forfettario' : 'tag-dipendente'}`}>{p.regime || 'dipendente'}</span>
+                  <span className={`tag-regime ${p.regime === 'forfettario' ? 'tag-forfettario' : 'tag-dipendente'}`}>{p.regime}</span>
+                  {p.attivo && <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--green)' }}>⚡ attivo</span>}
                 </div>
                 <div style={{ color: 'var(--accent2)', fontWeight: 600 }}>{pct(q)}</div>
-                <div>
-                  <div style={{ color: 'var(--text3)', fontSize: 11 }}>Investe</div>
-                  <strong>{fmt(calc.costoTotale * q)}</strong>
-                </div>
-                <div>
-                  <div style={{ color: 'var(--text3)', fontSize: 11 }}>Incassa</div>
-                  <strong>{fmt(calc.incassiTotali * q)}</strong>
-                </div>
-                <div>
-                  <div style={{ color: 'var(--text3)', fontSize: 11 }}>Guadagna</div>
-                  <strong style={{ color: calc.guadagno >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(calc.guadagno * q)}</strong>
-                </div>
+                <div><div style={{ fontSize: 11, color: 'var(--text3)' }}>Investe</div><strong>{fmt(calc.costoTotale * q)}</strong></div>
+                <div><div style={{ fontSize: 11, color: 'var(--text3)' }}>Bonus gestione</div><strong style={{ color: 'var(--green)' }}>{bonusP > 0 ? '+' + fmt(bonusP) : '—'}</strong></div>
+                <div><div style={{ fontSize: 11, color: 'var(--text3)' }}>Guadagno totale</div><strong style={{ color: guadagnoFinale >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(guadagnoFinale)}</strong></div>
               </div>
             )
           })}
@@ -463,26 +616,65 @@ function TabPartecipanti({ op, calc, update }) {
   )
 }
 
-// ---- Tab Tassazione ----
-function TabTassazione({ op, calc }) {
+// ---- Tab Tassazione & IMU ----
+function TabTassazione({ op, calc, update, updateField }) {
   const partecipanti = op.partecipanti || []
+  const aliquotaImu = num(op.aliquotaImu) || 0.0106
+  const annoiPossesso = op.dataAcquisto && op.dataRivendita
+    ? Math.max(1/12, (new Date(op.dataRivendita) - new Date(op.dataAcquisto)) / (1000 * 60 * 60 * 24 * 365))
+    : null
 
   return (
     <div>
       <div className="info-box" style={{ marginBottom: 14 }}>
-        ℹ️ La plusvalenza è tassata se vendi entro 5 anni dall'acquisto originale.<br />
-        <strong>Plusvalenza = Incassi - Costi deducibili (acquisto + ristrutturazione + spese)</strong><br />
-        Regime forfettario: gli scaglioni IRPEF <strong>non</strong> si sommano al reddito forfettario.<br />
-        Regime dipendente: i redditi si <strong>cumulano</strong> con quelli da lavoro.
+        ℹ️ <strong>Forfettario:</strong> scaglioni IRPEF separati dal reddito forfettario.<br />
+        ℹ️ <strong>Dipendente:</strong> redditi cumulati con quelli da lavoro → scaglioni più alti.<br />
+        ℹ️ <strong>Plusvalenza alternativa:</strong> se vendita entro 5 anni, possibile imposta sostitutiva al 26% — verificare con commercialista.
       </div>
 
+      {/* IMU */}
+      <div className="card">
+        <div className="card-title">🏛️ IMU</div>
+        <div className="field-grid">
+          <div className="field">
+            <label>Aliquota IMU (default 1.06%)</label>
+            <input type="number" step="0.0001" value={op.aliquotaImu || 0.0106} onChange={e => updateField('aliquotaImu', e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Valore catastale calcolato</label>
+            <input type="text" value={fmt(calc.valoreCatastale)} disabled style={{ color: 'var(--text2)' }} />
+          </div>
+        </div>
+        {annoiPossesso && (
+          <div className="result-grid" style={{ marginTop: 10 }}>
+            <div className="result-box">
+              <div className="rl">IMU annua totale immobile</div>
+              <div className="rv">{fmt(calc.valoreCatastale * aliquotaImu)}</div>
+            </div>
+            <div className="result-box">
+              <div className="rl">Durata possesso stimata</div>
+              <div className="rv">{annoiPossesso.toFixed(2)} anni</div>
+            </div>
+            <div className="result-box">
+              <div className="rl">IMU totale stimata</div>
+              <div className="rv" style={{ color: 'var(--red)' }}>{fmt(calc.valoreCatastale * aliquotaImu * annoiPossesso)}</div>
+            </div>
+          </div>
+        )}
+        {!annoiPossesso && <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 8 }}>Inserisci le date in Dashboard per calcolare l'IMU totale.</div>}
+      </div>
+
+      {/* IRPEF per partecipante */}
       {partecipanti.length === 0 && (
-        <div className="warn-box">⚠️ Aggiungi i partecipanti nella tab "Partecipanti" per vedere il calcolo fiscale individuale.</div>
+        <div className="warn-box">⚠️ Aggiungi i partecipanti nella tab "Partecipanti" per vedere il calcolo fiscale.</div>
       )}
 
       {partecipanti.map((p, i) => {
         const q = num(p.quota) / 100
-        const guadagnoLordo = calc.guadagno * q
+        const bonusP = p.attivo ? (num(op.bonusGestione) / 100) * (op.lotti || []).reduce((s, l) => s + Math.max(0, num(l.prezzoVendita) - num(l.prezzoMinimo)), 0) * (num(p.quotaBonus) / 100) : 0
+        const guadagnoLordo = calc.guadagno * q + bonusP
+        const imuPersonale = annoiPossesso ? calc.valoreCatastale * aliquotaImu * annoiPossesso * q : 0
+        const guadagnoDopoImu = guadagnoLordo - imuPersonale
         if (guadagnoLordo <= 0) return null
         return (
           <div key={i} className="tax-card">
@@ -493,66 +685,56 @@ function TabTassazione({ op, calc }) {
                   {p.regime === 'forfettario' ? 'Forfettario' : 'Dipendente'}
                 </span>
               </div>
-              <span style={{ color: 'var(--green)', fontWeight: 600 }}>{fmt(guadagnoLordo)}</span>
+              <span style={{ color: 'var(--green)', fontWeight: 600 }}>Guadagno lordo: {fmt(guadagnoLordo)}</span>
             </div>
+            {imuPersonale > 0 && (
+              <div className="tax-row">
+                <span>IMU quota {pct(q)} per {annoiPossesso?.toFixed(1)} anni</span>
+                <span style={{ color: 'var(--red)' }}>− {fmt(imuPersonale)}</span>
+              </div>
+            )}
+            <div className="tax-row">
+              <span>Guadagno dopo IMU</span>
+              <span style={{ fontWeight: 600 }}>{fmt(guadagnoDopoImu)}</span>
+            </div>
+            <hr className="divider" />
             {p.regime === 'forfettario'
-              ? <TassForfettario guadagno={guadagnoLordo} />
-              : <TassDipendente guadagno={guadagnoLordo} redditoAnnuo={num(p.redditoAnnuo)} />
+              ? <TassForfettario guadagno={guadagnoDopoImu} />
+              : <TassDipendente guadagno={guadagnoDopoImu} redditoAnnuo={num(p.redditoAnnuo)} />
             }
           </div>
         )
       })}
 
       <div className="warn-box" style={{ marginTop: 14 }}>
-        ⚠️ Se vendita entro 5 anni dall'acquisto originale: <strong>tassa sulla plusvalenza al 26%</strong> in alternativa agli scaglioni IRPEF (verificare con commercialista).<br />
-        Se acquistato con agevolazioni <strong>prima casa</strong>: rischio perdita benefici e sanzioni salvo riacquisto entro 1 anno.
+        ⚠️ Se vendita entro 5 anni: valutare <strong>imposta sostitutiva 26%</strong> sulla plusvalenza come alternativa agli scaglioni IRPEF.<br />
+        Se acquistato con <strong>prima casa</strong>: rischio perdita benefici e sanzioni salvo riacquisto entro 1 anno.
       </div>
     </div>
   )
 }
 
 function TassForfettario({ guadagno }) {
-  const WARN_36K = 36000
   const scaglioni = [
     { da: 0, a: 28000, aliquota: 0.23 },
     { da: 28000, a: 50000, aliquota: 0.33 },
     { da: 50000, a: Infinity, aliquota: 0.43 },
   ]
-
-  let rimanente = guadagno
-  let totaleTasse = 0
+  let rimanente = guadagno, totaleTasse = 0
   const righe = []
   for (const s of scaglioni) {
     if (rimanente <= 0) break
     const base = Math.min(rimanente, s.a - s.da)
     const tassa = base * s.aliquota
-    if (base > 0) {
-      righe.push({ label: `Scaglione ${pct(s.aliquota)} (fino a ${s.a === Infinity ? '+∞' : fmt(s.a)})`, base, tassa })
-      totaleTasse += tassa
-    }
+    if (base > 0) { righe.push({ label: `Scaglione ${pct(s.aliquota)} su ${fmt(base)}`, tassa }); totaleTasse += tassa }
     rimanente -= base
   }
-
   return (
     <div>
-      {guadagno > WARN_36K && (
-        <div className="warn-box" style={{ marginBottom: 10, fontSize: 12 }}>
-          ⚠️ Guadagno supera {fmt(WARN_36K)} — attenzione al limite forfettario. Verificare con commercialista.
-        </div>
-      )}
-      {righe.map((r, i) => (
-        <div key={i} className="tax-row">
-          <span>{r.label} su {fmt(r.base)}</span>
-          <span style={{ color: 'var(--red)' }}>− {fmt(r.tassa)}</span>
-        </div>
-      ))}
-      <div className="tax-total">
-        <span>Netto stimato</span>
-        <span style={{ color: 'var(--green)' }}>{fmt(guadagno - totaleTasse)}</span>
-      </div>
-      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 6 }}>
-        IRPEF totale: {fmt(totaleTasse)} — aliquota effettiva: {pct(totaleTasse / guadagno)}
-      </div>
+      {guadagno > 36000 && <div className="warn-box" style={{ marginBottom: 8, fontSize: 12 }}>⚠️ Supera €36.000 — attenzione al limite forfettario!</div>}
+      {righe.map((r, i) => <div key={i} className="tax-row"><span>{r.label}</span><span style={{ color: 'var(--red)' }}>− {fmt(r.tassa)}</span></div>)}
+      <div className="tax-total"><span>Netto stimato</span><span style={{ color: 'var(--green)' }}>{fmt(guadagno - totaleTasse)}</span></div>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 6 }}>IRPEF: {fmt(totaleTasse)} — aliquota effettiva: {pct(totaleTasse / guadagno)}</div>
     </div>
   )
 }
@@ -563,59 +745,22 @@ function TassDipendente({ guadagno, redditoAnnuo }) {
     { da: 28000, a: 50000, aliquota: 0.35 },
     { da: 50000, a: Infinity, aliquota: 0.43 },
   ]
-
-  // Calcolo IRPEF sul reddito totale cumulato
-  function calcolaIrpef(reddito) {
-    let tot = 0
-    let rim = reddito
-    for (const s of scaglioni) {
-      if (rim <= 0) break
-      const base = Math.min(rim, s.a - s.da)
-      tot += base * s.aliquota
-      rim -= base
-    }
+  function calcIrpef(r) {
+    let tot = 0, rim = r
+    for (const s of scaglioni) { if (rim <= 0) break; const b = Math.min(rim, s.a - s.da); tot += b * s.aliquota; rim -= b }
     return tot
   }
-
-  const redditoTotale = redditoAnnuo + guadagno
-  const irpefTotale = calcolaIrpef(redditoTotale)
-  const irpefSoloLavoro = calcolaIrpef(redditoAnnuo)
-  const irpefSuGuadagno = irpefTotale - irpefSoloLavoro
-  const aliquotaMarg = irpefSuGuadagno / guadagno
-
+  const irpefTot = calcIrpef(redditoAnnuo + guadagno)
+  const irpefLav = calcIrpef(redditoAnnuo)
+  const irpefAgg = irpefTot - irpefLav
   return (
     <div>
-      <div className="tax-row">
-        <span>Reddito da lavoro annuo</span>
-        <span>{fmt(redditoAnnuo)}</span>
-      </div>
-      <div className="tax-row">
-        <span>Guadagno immobiliare</span>
-        <span>{fmt(guadagno)}</span>
-      </div>
-      <div className="tax-row">
-        <span>Reddito totale cumulato</span>
-        <span style={{ fontWeight: 600 }}>{fmt(redditoTotale)}</span>
-      </div>
-      <div className="tax-row">
-        <span>IRPEF totale (su reddito cumulato)</span>
-        <span style={{ color: 'var(--red)' }}>− {fmt(irpefTotale)}</span>
-      </div>
-      <div className="tax-row">
-        <span>IRPEF già dovuta (solo lavoro)</span>
-        <span style={{ color: 'var(--text2)' }}>− {fmt(irpefSoloLavoro)}</span>
-      </div>
-      <div className="tax-row">
-        <span>IRPEF aggiuntiva sull'immobile</span>
-        <span style={{ color: 'var(--red)', fontWeight: 600 }}>− {fmt(irpefSuGuadagno)}</span>
-      </div>
-      <div className="tax-total">
-        <span>Netto stimato dall'operazione</span>
-        <span style={{ color: 'var(--green)' }}>{fmt(guadagno - irpefSuGuadagno)}</span>
-      </div>
-      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 6 }}>
-        Aliquota marginale effettiva: {pct(aliquotaMarg)} — i redditi si cumulano con quelli da lavoro
-      </div>
+      <div className="tax-row"><span>Reddito da lavoro</span><span>{fmt(redditoAnnuo)}</span></div>
+      <div className="tax-row"><span>Guadagno immobiliare</span><span>{fmt(guadagno)}</span></div>
+      <div className="tax-row"><span>Reddito totale cumulato</span><span style={{ fontWeight: 600 }}>{fmt(redditoAnnuo + guadagno)}</span></div>
+      <div className="tax-row"><span>IRPEF aggiuntiva sull'immobile</span><span style={{ color: 'var(--red)', fontWeight: 600 }}>− {fmt(irpefAgg)}</span></div>
+      <div className="tax-total"><span>Netto stimato</span><span style={{ color: 'var(--green)' }}>{fmt(guadagno - irpefAgg)}</span></div>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 6 }}>Aliquota marginale: {pct(irpefAgg / guadagno)}</div>
     </div>
   )
 }
@@ -624,29 +769,14 @@ function TassDipendente({ guadagno, redditoAnnuo }) {
 function TabNote({ op, update }) {
   return (
     <div className="card">
-      <div className="card-title">Note e appunti</div>
+      <div className="card-title">Note e appunti liberi</div>
       <textarea
-        rows={12}
+        rows={14}
         style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 6, color: 'var(--text)', padding: 12, fontSize: 14, resize: 'vertical', fontFamily: 'inherit' }}
         value={op.note || ''}
         onChange={e => update('note', e.target.value)}
-        placeholder="Appunti, checklist, link utili…"
+        placeholder="Appunti, link utili, contatti agenzia, stato trattativa…"
       />
-      <div style={{ marginTop: 12 }} className="warn-box">
-        <strong>Checklist iter operazione:</strong><br />
-        □ Ricerca e vista annunci<br />
-        □ Divisione planimetrica iniziale<br />
-        □ Stima costo rivendita da agenzia<br />
-        □ Calcolo €/mq (target 500–600€/mq ristrutturazione)<br />
-        □ Regolamento condominiale (no divieto frazionamento)<br />
-        □ Verifica urbanistica e catasto<br />
-        □ Accordo quote tra partecipanti<br />
-        □ Calcolo analitico completo<br />
-        □ Rogito notarile acquisto<br />
-        □ Inizio lavori<br />
-        □ Pratica catastale frazionamento<br />
-        □ Rogito notarile rivendita
-      </div>
     </div>
   )
 }
