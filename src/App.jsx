@@ -9,22 +9,19 @@ const STORAGE_KEY = 'fraz_codes'
 
 const ITER_PRE_DEFAULT = [
   'Ricerca e vista annunci',
-  'Compilazione excel al volo con ipotesi % investimento',
+  'Riempimento excel al volo con decisione % investimento',
   'Ipotesi di frazionamento rapida',
-  'Visione casa per studio muri portanti',
-  'Proposta di collaborazione con agenzia',
 ]
 const ITER_POST_DEFAULT = [
-  'Offerta vincolata (es. ottenimento progetto, vendita su carta)',
-  'Fare offerta in agenzia',
-  'Compilazione completa app: costi pratiche, DL',
-  'Capitolato lavori definito (incluso pulizia casa e androne)',
-  'Scelta % ingresso di ogni partecipante',
-  'Pratica edilizia avviata',
-  'Inizio lavori',
-  'Fine lavori',
-  'Accatastamento / frazionamento catastale',
-  'Vendite completate',
+  'Visione casa per studio muri portanti e proposta collaborazione agenzia',
+  'Capire chi partecipa, con quanti soldi e se si arriva alla cifra ipotetica',
+  'Studio dettagliato ma rapido di capitolato e ipotesi esatta frazionamento',
+  'Ingresso partecipanti con % esatta',
+  'Riempire tutta app',
+  'Fare offerta agenzia vincolata (es. ottenimento progetto, vendita su carta)',
+  'Pratica edilizia e inizio lavori',
+  'Fine lavori e accatastamento',
+  'Vendite',
 ]
 
 // ---- Helpers localStorage ----
